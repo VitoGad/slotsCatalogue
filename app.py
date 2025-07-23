@@ -10,7 +10,15 @@ game_name = st.text_input("Enter Slot Game Name:", "eye of medusa")
 def search_game_url(game_name):
     query = quote_plus(game_name)
     search_url = f"https://www.slotstemple.com/?s={query}&post_type=slots"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/115.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.google.com/"
+    }
     res = requests.get(search_url, headers=headers)
     if res.status_code != 200:
         st.error(f"Search failed with status {res.status_code}")
