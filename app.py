@@ -1,27 +1,28 @@
 import streamlit as st
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import re
 
-st.title("🎰 Slotstemple Slot Info (No Search Needed)")
+st.set_page_config(page_title="🎰 Slot Info Finder", layout="centered")
+st.title("🎰 Slot Info from Slotstemple")
 
+# Helper to slugify game name to URL format
 def slugify(name):
     name = name.lower()
-    name = re.sub(r"[^\w\s-]", "", name)
-    name = re.sub(r"[\s_-]+", "-", name)
+    name = re.sub(r"[^\w\s-]", "", name)  # Remove punctuation
+    name = re.sub(r"[\s_-]+", "-", name)  # Replace spaces/underscores with hyphens
     name = name.strip("-")
     return name
 
+# Scrape data using cloudscraper to bypass 403
 def get_slot_data(url):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/115.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    res = requests.get(url, headers=headers)
+    scraper = cloudscraper.create_scraper()
+    try:
+        res = scraper.get(url)
+    except Exception as e:
+        st.error(f"Request failed: {e}")
+        return None
+
     if res.status_code != 200:
         st.error(f"Failed to fetch slot page (status {res.status_code})")
         return None
@@ -33,6 +34,7 @@ def get_slot_data(url):
     for row in rows:
         label = row.find("th").get_text(strip=True)
         td = row.find("td")
+
         if label == "Software:":
             a = td.find("a")
             data["Game Provider"] = a.get_text(strip=True) if a else td.get_text(strip=True)
@@ -43,18 +45,19 @@ def get_slot_data(url):
 
     return data
 
-# Input form
-game_name = st.text_input("Enter slot game name", "Eye of Medusa")
+# Input UI
+game_name = st.text_input("Enter the slot game name", value="Eye of Medusa")
 
 if st.button("Get Slot Info"):
     slug = slugify(game_name)
     url = f"https://www.slotstemple.com/free-slots/{slug}/"
-    st.write(f"🔗 Checking: {url}")
+    st.markdown(f"🔗 **Fetching**: [{url}]({url})")
 
     data = get_slot_data(url)
     if data:
-        st.success("Slot data retrieved!")
-        for k, v in data.items():
-            st.write(f"**{k}**: {v}")
+        st.success("✅ Data found!")
+        st.markdown("### 🎯 Game Info")
+        for key, value in data.items():
+            st.write(f"**{key}**: {value}")
     else:
-        st.warning("Slot not found or data missing.")
+        st.warning("⚠️ No data found or slot page structure has changed.")
