@@ -1,63 +1,86 @@
 import streamlit as st
-import cloudscraper
+import requests
 from bs4 import BeautifulSoup
-import re
 
-st.set_page_config(page_title="🎰 Slot Info Finder", layout="centered")
-st.title("🎰 Slot Info from Slotstemple")
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-# Helper to slugify game name to URL format
-def slugify(name):
-    name = name.lower()
-    name = re.sub(r"[^\w\s-]", "", name)  # Remove punctuation
-    name = re.sub(r"[\s_-]+", "-", name)  # Replace spaces/underscores with hyphens
-    name = name.strip("-")
-    return name
-
-# Scrape data using cloudscraper to bypass 403
-def get_slot_data(url):
-    scraper = cloudscraper.create_scraper()
-    try:
-        res = scraper.get(url)
-    except Exception as e:
-        st.error(f"Request failed: {e}")
-        return None
-
-    if res.status_code != 200:
-        st.error(f"Failed to fetch slot page (status {res.status_code})")
-        return None
-
+def search_slots(query):
+    search_url = f"https://www.bigwinboard.com/?s={query.replace(' ', '+')}"
+    res = requests.get(search_url, headers=HEADERS)
+    res.raise_for_status()
     soup = BeautifulSoup(res.text, "html.parser")
-    rows = soup.select("tbody tr.game-info-table-row")
+    results = []
+    for post in soup.select("article.post"):
+        title_tag = post.select_one("h2.entry-title a")
+        snippet_tag = post.select_one("div.entry-content")
+        if title_tag and snippet_tag:
+            results.append({
+                "title": title_tag.text.strip(),
+                "url": title_tag['href'],
+                "snippet": snippet_tag.text.strip()
+            })
+    return results
 
-    data = {}
-    for row in rows:
-        label = row.find("th").get_text(strip=True)
-        td = row.find("td")
+def scrape_slot_details(url):
+    res = requests.get(url, headers=HEADERS)
+    res.raise_for_status()
+    soup = BeautifulSoup(res.text, "html.parser")
 
-        if label == "Software:":
-            a = td.find("a")
-            data["Game Provider"] = a.get_text(strip=True) if a else td.get_text(strip=True)
-        elif label == "RTP:":
-            data["RTP"] = td.get_text(strip=True)
-        elif label == "Min Bet (all lines covered):":
-            data["Min Bet"] = td.get_text(strip=True)
+    # Initialize details dict
+    details = {
+        "Game Provider": "N/A",
+        "RTP": "N/A",
+        "Min Bet": "N/A"
+    }
 
-    return data
+    # Search for Game Provider (usually inside .game-provider or similar)
+    provider_tag = soup.find(string="Software:")
+    if provider_tag:
+        # Provider is next <a> tag or sibling
+        provider = provider_tag.find_next('a')
+        if provider:
+            details["Game Provider"] = provider.text.strip()
 
-# Input UI
-game_name = st.text_input("Enter the slot game name", value="Eye of Medusa")
+    # Search for RTP (look for "RTP:" string)
+    rtp_tag = soup.find(string="RTP:")
+    if rtp_tag:
+        rtp_value = rtp_tag.find_next(text=True)
+        if rtp_value:
+            details["RTP"] = rtp_value.strip()
 
-if st.button("Get Slot Info"):
-    slug = slugify(game_name)
-    url = f"https://www.slotstemple.com/free-slots/{slug}/"
-    st.markdown(f"🔗 **Fetching**: [{url}]({url})")
+    # Search for Min Bet (look for "Min Bet" string)
+    min_bet_tag = soup.find(string=lambda t: t and "Min Bet" in t)
+    if min_bet_tag:
+        min_bet_value = min_bet_tag.find_next(text=True)
+        if min_bet_value:
+            details["Min Bet"] = min_bet_value.strip()
 
-    data = get_slot_data(url)
-    if data:
-        st.success("✅ Data found!")
-        st.markdown("### 🎯 Game Info")
-        for key, value in data.items():
-            st.write(f"**{key}**: {value}")
-    else:
-        st.warning("⚠️ No data found or slot page structure has changed.")
+    return details
+
+def main():
+    st.title("Bigwinboard Slot Search")
+
+    query = st.text_input("Enter slot game name", "")
+
+    if query:
+        st.write(f"Searching for: **{query}**")
+        try:
+            results = search_slots(query)
+            if not results:
+                st.write("No results found.")
+                return
+            for idx, res in enumerate(results):
+                st.subheader(f"{res['title']}")
+                st.write(res['snippet'])
+                st.markdown(f"[Open Slot Page]({res['url']})")
+
+                if st.button(f"Get details for '{res['title']}'", key=f"btn_{idx}"):
+                    with st.spinner("Fetching slot details..."):
+                        details = scrape_slot_details(res['url'])
+                    st.json(details)
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
